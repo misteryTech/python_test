@@ -1,0 +1,25 @@
+{
+  "version": "5.0.0",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "dirty_bottle",
+      "points": [
+        [
+          658,
+          78
+        ],
+        [
+          885,
+          385
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "rectangle",
+      "flags": {}
+    }
+  ],
+  "imagePath": "broken_glass_20260329_210214_950428.jpg",
+  "imageHeight": 720,
+  "imageWidth": 1280
+}

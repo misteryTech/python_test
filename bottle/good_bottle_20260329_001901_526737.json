@@ -1,0 +1,28 @@
+{
+  "version": "6.0.0",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "good_bottle",
+      "points": [
+        [
+          892.8225806451612,
+          672.9032258064517
+        ],
+        [
+          636.3709677419355,
+          1.9354838709677238
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "good_bottle_20260329_001901_526737.jpg",
+  "imageData": null,
+  "imageHeight": 720,
+  "imageWidth": 1280
+}

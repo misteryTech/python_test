@@ -1,0 +1,25 @@
+{
+  "version": "5.0.0",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "dirty_bottle",
+      "points": [
+        [
+          639,
+          72
+        ],
+        [
+          878,
+          649
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "rectangle",
+      "flags": {}
+    }
+  ],
+  "imagePath": "dirty_bottle_20260329_181120_830468.jpg",
+  "imageHeight": 720,
+  "imageWidth": 1280
+}

@@ -1,0 +1,9 @@
+path: C:\xampp\htdocs\python_test\bottle\YOLODataset
+train: train/images
+val: val/images
+
+nc: 3
+names:
+  - good_bottle
+  - broken_glass
+  - dirty_bottle

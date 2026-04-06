@@ -1,0 +1,2 @@
+PORT     = "COM7"
+BAUDRATE = 115200
