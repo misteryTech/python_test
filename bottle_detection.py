@@ -18,7 +18,7 @@ SAVE_REJECTS         = True
 REJECT_FOLDER        = "rejected_bottles"
 
 # Arduino
-ARDUINO_PORT         = "COM7"
+ARDUINO_PORT         = "COM6"
 BAUD_RATE            = 115200
 
 # Frames needed before confirming detection
@@ -35,15 +35,9 @@ LABEL_COLORS = {
 # BEHAVIOR SUMMARY
 # ─────────────────────────────────────────────
 # good_bottle  → Relay ON 15s, Servo triggered
-# dirty_bottle → Motor ON 5s then STOP, Servo 180°
-# broken_glass → Motor ON 5s then STOP, Servo 180°
-# no bottle    → All OFF
-#
-# Commands sent to Arduino:
-#   b'G' = good bottle  → relay ON 15s + servo sweep
-#   b'D' = dirty bottle → motor ON 5s + servo 180°
-#   b'B' = broken glass → motor ON 5s + servo 180°
-#   b'N' = no bottle    → all OFF
+# dirty_bottle → Motor ON 3s then STOP, Servo 180°
+# broken_glass → Motor ON 4s then STOP, Servo 180°
+# no bottle    → All OFF (only if Arduino is NOT busy)
 # ─────────────────────────────────────────────
 
 # ─────────────────────────────────────────────
@@ -147,10 +141,10 @@ def draw_detections(frame, results, conf_threshold):
 def draw_hud(frame, detected_labels, fps,
              relay_state, motor_state, servo_state,
              confirm_count, confirm_needed,
-             action_timer, action_duration):
+             action_timer, action_duration,
+             arduino_busy):                          # ← new param
     h, w = frame.shape[:2]
 
-    # ── Left info panel ──
     cv2.putText(frame, f"FPS: {fps:.1f}", (10, 28),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
 
@@ -177,6 +171,12 @@ def draw_hud(frame, detected_labels, fps,
     cv2.putText(frame, s_text, (10, 126),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, s_color, 2)
 
+    # ── BUSY indicator ──                           # ← new
+    busy_text  = "ARDUINO: BUSY - waiting..." if arduino_busy else "ARDUINO: READY"
+    busy_color = (0, 200, 255) if arduino_busy else (100, 100, 100)
+    cv2.putText(frame, busy_text, (10, 150),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.48, busy_color, 1)
+
     # Action countdown timer bar
     if action_timer is not None and action_duration > 0:
         elapsed   = time.time() - action_timer
@@ -184,19 +184,19 @@ def draw_hud(frame, detected_labels, fps,
         pct       = remaining / action_duration
         bar_w, bar_h = 160, 10
         filled = int(pct * bar_w)
-        cv2.rectangle(frame, (10, 136), (10 + bar_w, 136 + bar_h), (60, 60, 60), -1)
+        cv2.rectangle(frame, (10, 160), (10 + bar_w, 160 + bar_h), (60, 60, 60), -1)
         bar_color = (0, 255, 120) if relay_state == "ON" else (0, 165, 255)
-        cv2.rectangle(frame, (10, 136), (10 + filled, 136 + bar_h), bar_color, -1)
+        cv2.rectangle(frame, (10, 160), (10 + filled, 160 + bar_h), bar_color, -1)
         cv2.putText(frame, f"Timer: {remaining:.1f}s / {action_duration}s",
-                    (10, 162), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (200, 200, 200), 1)
+                    (10, 186), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (200, 200, 200), 1)
 
     # Confirmation bar
     bar_w2 = 160
     filled2 = int((min(confirm_count, confirm_needed) / confirm_needed) * bar_w2)
-    cv2.rectangle(frame, (10, 170), (10 + bar_w2, 182), (60, 60, 60), -1)
-    cv2.rectangle(frame, (10, 170), (10 + filled2, 182), (0, 220, 255), -1)
+    cv2.rectangle(frame, (10, 194), (10 + bar_w2, 206), (60, 60, 60), -1)
+    cv2.rectangle(frame, (10, 194), (10 + filled2, 206), (0, 220, 255), -1)
     cv2.putText(frame, f"Confirm: {min(confirm_count, confirm_needed)}/{confirm_needed}",
-                (10, 198), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (200, 200, 200), 1)
+                (10, 222), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (200, 200, 200), 1)
 
     # Timestamp
     ts = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
@@ -204,17 +204,21 @@ def draw_hud(frame, detected_labels, fps,
                 cv2.FONT_HERSHEY_SIMPLEX, 0.48, (160, 160, 160), 1)
 
     # ── Status banner top right ──
-    if not detected_labels:
+    if arduino_busy:
+        # Show what's currently running even if camera sees nothing
+        status_text  = "ARDUINO BUSY - TASK RUNNING..."
+        banner_color = (100, 80, 0)
+    elif not detected_labels:
         status_text  = "NO BOTTLE"
         banner_color = (50, 50, 50)
     elif all(l == "good_bottle" for l in detected_labels):
         status_text  = "GOOD  |  RELAY 15s + SERVO"
         banner_color = (0, 140, 0)
     elif "broken_glass" in detected_labels:
-        status_text  = "BROKEN  |  MOTOR 5s + SERVO 180"
+        status_text  = "BROKEN  |  MOTOR 4s + SERVO 180"
         banner_color = (0, 0, 170)
     else:
-        status_text  = "DIRTY  |  MOTOR 5s + SERVO 180"
+        status_text  = "DIRTY  |  MOTOR 3s + SERVO 180"
         banner_color = (0, 100, 200)
 
     (bw, bh), _ = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
@@ -231,9 +235,9 @@ def main():
     print("=" * 60)
     print("  Bottle QC Detection System")
     print("  good_bottle  → Relay ON 15s + Servo triggered")
-    print("  dirty_bottle → Motor ON 5s STOP + Servo 180°")
-    print("  broken_glass → Motor ON 5s STOP + Servo 180°")
-    print("  no bottle    → All OFF")
+    print("  dirty_bottle → Motor ON 3s STOP + Servo 180°")
+    print("  broken_glass → Motor ON 4s STOP + Servo 180°")
+    print("  no bottle    → All OFF (only when Arduino is free)")
     print("  Press Q to quit")
     print("=" * 60)
 
@@ -250,13 +254,19 @@ def main():
     confirm_count  = 0
 
     # Hardware display state
-    relay_state    = "OFF"
-    motor_state    = "OFF"
-    servo_state    = "OFF"
-    action_timer   = None
+    relay_state     = "OFF"
+    motor_state     = "OFF"
+    servo_state     = "OFF"
+    action_timer    = None
     action_duration = 0
 
-    # Start all OFF
+    # ── BUSY FLAG ──────────────────────────────
+    # True = Arduino is executing a task.
+    # Python will NOT send any new command until
+    # the full action_duration has elapsed.
+    arduino_busy    = False                          # ← new
+    # ───────────────────────────────────────────
+
     send_command(b'N', "startup - all OFF")
 
     while True:
@@ -271,8 +281,8 @@ def main():
 
         # ── FPS ──
         now       = datetime.now()
-        elapsed   = (now - prev_time).total_seconds()
-        fps       = 1.0 / elapsed if elapsed > 0 else fps
+        elapsed_t = (now - prev_time).total_seconds()
+        fps       = 1.0 / elapsed_t if elapsed_t > 0 else fps
         prev_time = now
 
         # ── Raw status this frame ──
@@ -292,74 +302,77 @@ def main():
             pending_status = raw_status
             confirm_count  = 1
 
-        # ── Auto-reset display state after timer ends ──
-        if action_timer is not None and action_duration > 0:
+        # ── Check if Arduino finished its task ──  # ← new block
+        if arduino_busy and action_timer is not None:
             if time.time() - action_timer >= action_duration:
-                relay_state    = "OFF"
-                motor_state    = "OFF"
-                servo_state    = "OFF"
-                action_timer   = None
-                action_duration = 0
-
-        # ── Trigger on confirmed status change ──
-        if confirm_count >= CONFIRM_FRAMES and raw_status != prev_status:
-            prev_status = raw_status
-
-            if raw_status == "GOOD":
-                # ✅ Good bottle:
-                #    → Relay ON for 15 seconds
-                #    → Servo triggered (Arduino handles sweep)
-                print("  ✅ GOOD BOTTLE — Relay ON 15s + Servo triggered")
-                send_command(b'G', "Relay ON 15s + Servo")
-                relay_state     = "ON"
-                motor_state     = "OFF"
-                servo_state     = "ON"
-                action_timer    = time.time()
-                action_duration = 15
-
-            elif raw_status == "DIRTY":
-                # 🟠 Dirty bottle:
-                #    → Motor ON for 5 seconds then STOP
-                #    → Servo 180°
-                print("  🟠 DIRTY BOTTLE — Motor 5s STOP + Servo 180°")
-                send_command(b'D', "Motor 5s + Servo 180")
-                relay_state     = "OFF"
-                motor_state     = "ON"
-                servo_state     = "ON"
-                action_timer    = time.time()
-                action_duration = 5
-                if SAVE_REJECTS:
-                    save_rejected(frame, "dirty_bottle")
-
-            elif raw_status == "BROKEN":
-                # ❌ Broken glass:
-                #    → Motor ON for 5 seconds then STOP
-                #    → Servo 180°
-                print("  ❌ BROKEN GLASS — Motor 5s STOP + Servo 180°")
-                send_command(b'B', "Motor 5s + Servo 180")
-                relay_state     = "OFF"
-                motor_state     = "ON"
-                servo_state     = "ON"
-                action_timer    = time.time()
-                action_duration = 5
-                if SAVE_REJECTS:
-                    save_rejected(frame, "broken_glass")
-
-            elif raw_status == "NONE":
-                # ⬜ No bottle → all OFF
-                print("  ⬜ No bottle — All OFF")
-                send_command(b'N', "All OFF")
+                # Task fully done — unlock Python
+                arduino_busy    = False
                 relay_state     = "OFF"
                 motor_state     = "OFF"
                 servo_state     = "OFF"
                 action_timer    = None
                 action_duration = 0
+                prev_status     = None  # reset so next bottle triggers fresh
+                confirm_count   = 0
+                pending_status  = None
+                print("  [✓] Arduino task done — ready for next bottle")
+
+        # ── Only act if Arduino is FREE ──         # ← guard
+        if not arduino_busy:
+
+            # ── Trigger on confirmed status change ──
+            if confirm_count >= CONFIRM_FRAMES and raw_status != prev_status:
+                prev_status = raw_status
+
+                if raw_status == "GOOD":
+                    print("  ✅ GOOD BOTTLE — Relay ON 15s + Servo triggered")
+                    send_command(b'G', "Relay ON 15s + Servo")
+                    relay_state     = "ON"
+                    motor_state     = "OFF"
+                    servo_state     = "ON"
+                    action_timer    = time.time()
+                    action_duration = 15
+                    arduino_busy    = True           # ← lock
+
+                elif raw_status == "DIRTY":
+                    print("  🟠 DIRTY BOTTLE — Motor 3s STOP + Servo 180°")
+                    send_command(b'D', "Motor 3s + Servo 180")
+                    relay_state     = "OFF"
+                    motor_state     = "ON"
+                    servo_state     = "ON"
+                    action_timer    = time.time()
+                    action_duration = 3
+                    arduino_busy    = True           # ← lock
+                    if SAVE_REJECTS:
+                        save_rejected(frame, "dirty_bottle")
+
+                elif raw_status == "BROKEN":
+                    print("  ❌ BROKEN GLASS — Motor 4s STOP + Servo 180°")
+                    send_command(b'B', "Motor 4s + Servo 180")
+                    relay_state     = "OFF"
+                    motor_state     = "ON"
+                    servo_state     = "ON"
+                    action_timer    = time.time()
+                    action_duration = 4
+                    arduino_busy    = True           # ← lock
+                    if SAVE_REJECTS:
+                        save_rejected(frame, "broken_glass")
+
+                elif raw_status == "NONE":
+                    print("  ⬜ No bottle — All OFF")
+                    send_command(b'N', "All OFF")
+                    relay_state     = "OFF"
+                    motor_state     = "OFF"
+                    servo_state     = "OFF"
+                    action_timer    = None
+                    action_duration = 0
 
         # ── Draw HUD ──
         frame = draw_hud(frame, detected_labels, fps,
                          relay_state, motor_state, servo_state,
                          confirm_count, CONFIRM_FRAMES,
-                         action_timer, action_duration)
+                         action_timer, action_duration,
+                         arduino_busy)               # ← pass busy flag
 
         cv2.imshow("Bottle QC System  |  Press Q to quit", frame)
 
